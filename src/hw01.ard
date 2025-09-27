@@ -61,7 +61,7 @@
 
 \func fac (x : Nat) : Nat \elim x
   | 0 => 1
-  | suc x => fac x * suc x
+  | suc x \as y => fac x * y
 
 -- 7. Определите mod и gcd
 
@@ -76,7 +76,7 @@
       | suc fuel => if' (x < y) x (aux fuel (x - y) y)
   }
 
-\func gcd (x y : Nat) : Nat => aux x x y
+\func gcd (x y : Nat) : Nat => if' (x < y) (aux y x y) (aux x x y)
     \where {
       \func isZero (x : Nat) : Bool \elim x
         | 0 => true
