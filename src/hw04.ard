@@ -1,4 +1,9 @@
 \import Data.Bool
+\import Data.Maybe
+\import Function.Meta
+\import Prelude (=, Nat, idp, suc)
+\import lect01 (*, +, -)
+\import lect02 (List, T)
 \import lect04
 
 -- 1. Напишите функцию at, которая принимает List A и натуральное число и возвращает элемент по заданому индексу
@@ -6,69 +11,188 @@
 --    Поэтому эта функция должна дополнительно еще принимать доказательство того,
 --    что индекс находится в допустимых границах, в виде T (n < length xs)
 
-\func \infix 4 < (x y : Nat) : Bool
+\func \infix 4 < (_ _ : Nat) : Bool
   | 0, 0 => false
   | 0, suc y => true
   | suc x, 0 => false
   | suc x, suc y => x < y
 
-\func at => {?}
+\func length {A : \Type} (_ : List A) : Nat
+  | List.nil => 0
+  | List.cons a xs => suc (length xs)
+
+\func at {A : \Type} (xs : List A) (n : Nat) (_ : T (n < length xs)) : A
+  | List.nil, 0, ()
+  | List.cons a xs, 0, p => a
+  | List.cons a xs, suc n, p => at xs n p
 
 -- 2. Реализуйте аналоги функции replicate для vec и Vec
 --    (эта функция создает список заданной длины, состоящий из повторений данного элемента)
 
+\func replicate-vec {A : \Type} (x : A) (n : Nat) : vec A n \elim n
+  | 0 => ()
+  | suc n => (x, replicate-vec x n)
+
+\func replicate-Vec {A : \Type} (x : A) (n : Nat) : Vec A n \elim n
+  | 0 => nil
+  | suc n => cons x $ replicate-Vec x n
+
 -- 3. Реализуйте аналоги функции map для vec и Vec
+
+\func map-vec {A B : \Type} {n : Nat} (xs : vec A n) (f : A -> B) : vec B n \elim n, xs
+  | 0, () => ()
+  | suc n, (x, xs) => (f x, map-vec xs f)
+
+\func map-Vec {A B : \Type} {n : Nat} (xs : Vec A n) (f : A -> B) : Vec B n \elim n, xs
+  | 0, nil => nil
+  | suc n, cons x xs => cons (f x) (map-Vec xs f)
 
 -- 4. Реализуйте аналоги функции zipWith для vec и Vec
 --    Функция должна принимать вектора одинаковой длины
+
+\func zipWith-vec {A B C : \Type} {n : Nat} (xs : vec A n) (ys : vec B n) (f : A -> B -> C) : vec C n \elim n, xs, ys
+  | 0, (), () => ()
+  | suc n, (x, xs), (y, ys) => (f x y, zipWith-vec xs ys f)
+
+\func zipWith-Vec {A B C : \Type} {n : Nat} (xs : Vec A n) (ys : Vec B n) (f : A -> B -> C) : Vec C n \elim n, xs, ys
+  | 0, nil, nil => nil
+  | suc n, cons x xs, cons y ys => cons (f x y) (zipWith-Vec xs ys f)
 
 -- 5. Определите тип CTree A n полных бинарных деревьев высоты ровно n,
 --    которые хранят элементы только во внутренних узлах, но не в листьях
 --    Высота листа равна 0
 
-\data CTree (A : \Type) (n : Nat)
+\data CTree (A : \Type) (n : Nat) \elim n
+  | 0 => CTList
+  | suc n => CTNode A (CTree A n) (CTree A n)
 
 -- 6. Определите тип Tree A n бинарных деревьев высоты не больше n,
 --    которые хранят элементы только во внутренних узлах, но не в листьях
 --    Высота листа равна 0
 
-\data Tree (A : \Type) (n : Nat)
+\data Tree (A : \Type) (n : Nat) \elim n
+  | 0 => TList
+  | suc n \as N => TNode A {x y : Nat} (T (x < N)) (Tree A x) (T (y < N)) (Tree A y)
 
 -- Определите функцию, возвращающую высоту дерева
 
-\func height {A : \Type} (n : Nat) (t : Tree A n) : Fin (suc n) => {?}
+\func FinFromNat (n : Nat) : Fin (suc n)
+  | 0 => fzero
+  | suc n => fsuc (FinFromNat n)
+
+\func height {A : \Type} (n : Nat) (_ : Tree A n) : Fin (suc n) => FinFromNat n
 
 -- Optional task
 -- 7. Функции Fin n -> A соответствуют спискам элементов A длины n
 --    Функция, преобразующая Vec A n в Fin n -> A, была реализована на лекции
 --    Реализуйте обратную функцию
 
-\func coin {A : \Type} {n : Nat} (f : Fin n -> A) : Vec A n => {?}
+\func upgrade {n : Nat} (_ : Fin n) : Fin (suc n)
+  | {suc n}, fzero => fzero
+  | {suc n}, fsuc fin => fsuc (upgrade fin)
+
+\func coin {A : \Type} {n : Nat} (f : Fin n -> A) : Vec A n \elim n
+  | 0 => nil
+  | suc n => cons (f (FinFromNat n)) (coin (\lam fin => f $ upgrade fin))
 
 -- Optional task
 -- 8. Определите тип матриц и ряд функций над ними
 
-\func Mat (A : \Type) (n m : Nat) : \Type => {?}
+\func Mat (A : \Type) (n m : Nat) : \Type => vec (vec A m) n
 
 -- Диагональная матрица с элементами e на диагонали и z на остальных позициях
+\func diag {A : \Type} (z e : A) (n : Nat) : Mat A n n => buildMat z e n n
+  \where {
+    \func natEqual (x y : Nat) : Bool \elim x, y
+      | 0, 0 => true
+      | suc x', suc y' => natEqual x' y'
+      | _, _ => false
 
-\func diag {A : \Type} (z e : A) (n : Nat) : Mat A n n => {?}
+    \func buildRow {A : \Type} (z e : A) (n targetPosInv : Nat) : vec A n
+    \elim n
+      | 0 => ()
+      | suc n => (if (natEqual targetPosInv n) e z, buildRow z e n targetPosInv)
+
+    \func buildMat {A : \Type} (z e : A) (n m : Nat) : Mat A n m
+    \elim n
+      | 0 => ()
+      | suc n => (buildRow z e m n, buildMat z e n m)
+  }
+
+-- Вроде работает :/
+\func diagTest : diag 0 1 4 = ((1, (0, (0, (0, ())))),
+                              ((0, (1, (0, (0, ())))),
+                              ((0, (0, (1, (0, ())))),
+                              ((0, (0, (0, (1, ())))),
+                              ())))) => idp
 
 -- Транспонирование матриц
 
-\func transpose {A : \Type} {n m : Nat} (M : Mat A n m) : Mat A m n => {?}
+\func transpose {A : \Type} {n m : Nat} (M : Mat A n m) : Mat A m n \elim n, m, M
+  | 0, 0, M => ()
+  | 0, suc m, M => ((), transpose {A} {0} ())
+  | suc n, 0, M => ()
+  | suc n \as N, suc m \as M, Matr => (map-vec {vec A M} {A} {N} Matr (head m), transpose {A} {N} {m} (map-vec {vec A M} {vec A m} {N} Matr (tail m)))
 
 -- Сложение матриц
 
-\func matAdd {A : \Type} (add : A -> A -> A) (n m : Nat) (M N : Mat A n m) : Mat A n m => {?}
+\func matAdd {A : \Type} (add : A -> A -> A) (n m : Nat) (M N : Mat A n m) : Mat A n m \elim n, m, M, N
+  | 0, 0, M, N => M
+  | 0, suc m, M, N => M
+  | suc n, 0, M, N => M
+  | suc n, suc m \as M, (mrow, mrows), (nrow, nrows) => (zipWith-vec {_} {_} {_} {M} mrow nrow add, matAdd add n M mrows nrows)
 
 -- Умножение матриц
 -- z ─ нейтральный элемент по сложению
-\func matMul {A : \Type} (z : A) (add mul : A -> A -> A) (n m k : Nat) (M : Mat A n m) (N : Mat A m k) : Mat A n k => {?}
+\func matMul {A : \Type} (z : A) (add mul : A -> A -> A) (n m k : Nat) (M : vec (vec A m) n) (N : vec (vec A k) m) : Mat A n k \elim n, m, k, M, N
+  | 0, 0, 0, M, N => ()
+  | 0, 0, suc k, M, N => N
+  | 0, suc m, 0, M, N => ()
+  | 0, suc m, suc k, M, N => ()
+  | suc n, 0, 0, M, N => M
+  | suc n, 0, suc k, M, N => replicate-vec (replicate-vec z (suc k)) (suc n)
+  | suc n, suc m, 0, M, N => transpose {A} {0} {suc n} ()
+  | suc n \as nP, suc m \as mP, suc k \as kP, M, N
+  => map-vec {vec A mP} {vec A kP} {nP} M
+      (\lam row => map-vec {vec A mP} {A} {kP}
+            (transpose {A} {mP} {kP} N)
+            (\lam col => dotProduct {A} z add mul mP row col))
+    \where {
+      \func dotProduct {A : \Type} (z : A) (add mul : A -> A -> A) (n : Nat) (v1 v2 : vec A n) : A \elim n, v1, v2
+        | 0, (), () => z
+        | suc n, (x, xs), (y, ys) => add (mul x y) (dotProduct z add mul n xs ys)
+    }
+
+-- Вроде сошлось :/
+\func matMulTest : (matMul 0 (+) (*) 3 4 2)
+    ((5, (3, (7, (0, ())))),
+    ((7, (1, (9, (2, ())))),
+    ((3, (4, (7, (6, ())))),
+    ())))
+    ((20, (3, ())),
+    ((18, (4, ())),
+    ((12, (1, ())),
+    ((23, (2, ())),
+    ()))))
+    =
+    ((238, (34, ())),
+    ((312, (38, ())),
+    ((354, (44, ())),
+    ()))) => idp
 
 -- 9. Определите факториал через Nat-rec
 
+\func fact (n : Nat) : Nat
+  => Nat-rec Nat 1 (\lam curr r => suc curr * r) n
+
 -- 10. Докажите ассоциативность сложения для натуральных чисел через Nat-elim
+
+--\func +-assoc (x y z : Nat) : (x + y) + z = x + (y + z) \elim z
+--  | 0 => idp
+--  | suc z => pmap suc $ +-assoc _ _ _
+
+\func +-assoc (x y z : Nat) : (x + y) + z = x + (y + z)
+  => Nat-elim (\lam z => (x + y) + z = x + (y + z)) idp (\lam _ rec => pmap suc rec) z
 
 -- 11. Определите рекурсор и элиминатор для D
 
@@ -77,6 +201,24 @@
   | con2 D D
   | con3 (Nat -> D)
 
+\func D-elim (P : D -> \Type)
+             (c1 : \Pi (n : Nat) -> P (con1 n))
+             (c2 : \Pi (d1 d2 : D) -> P d1 -> P d2 -> P (con2 d1 d2))
+             (c3 : \Pi (f : Nat -> D) -> (\Pi (n : Nat) -> P (f n)) -> P (con3 f))
+             (x : D) : P x
+  \elim x
+    | con1 n => c1 n
+    | con2 d1 d2 => c2 d1 d2 (D-elim P c1 c2 c3 d1) (D-elim P c1 c2 c3 d2)
+    | con3 f => c3 f (\lam n => D-elim P c1 c2 c3 (f n))
+
+-- Рекурсор для Nat
+\func D-rec (P : \Type)
+            (c1 : Nat -> P)
+            (c2 : D -> D -> P -> P -> P)
+            (c3 : (Nat -> D) -> (Nat -> P) -> P)
+            (x : D) : P
+  => D-elim (\lam _ => P) c1 c2 c3 x
+
 {- Для проверки, что определения D-elim и D-rec верные, вы можете попробовать определить foo через D-rec
 \func foo (d : D) : Nat
   | con1 n => n
@@ -84,15 +226,38 @@
   | con3 g => foo (g (foo (g 100)))
 -}
 
+\func foo (d : D) : Nat
+  => D-rec Nat
+      (\lam n => n)
+      (\lam _ _ rec1 rec2 => rec1 Nat.+ rec2)
+      (\lam _ rec => rec (rec 100))
+      d
+
 -- 12. Определите рекурсор и элиминатор для List
+
+\func List-elim {A : \Type} (P : List A -> \Type)
+                (Nil : P List.nil)
+                (Cons : \Pi (x : A) (xs : List A) -> P xs -> P (List.cons x xs))
+                (xs : List A) : P xs
+  \elim xs
+    | List.nil => Nil
+    | List.cons x xs => Cons x xs $ List-elim P Nil Cons xs
+
+\func List-rec  {A : \Type} (P : \Type)
+                (Nil : P)
+                (Cons : A -> List A -> P -> P)
+                (xs : List A) : P
+  => List-elim (\lam _ => P) Nil Cons xs
 
 -- 13. Докажите pmap при помощи паттерн матчинга с idp
 
-\func pmap {A B : \Type} (f : A -> B) {a a' : A} (p : a = a') : f a = f a' => {?}
+\func pmap {A B : \Type} (f : A -> B) {a a' : A} (p : a = a') : f a = f a' \elim p
+  | idp => idp
 
 -- 14. Докажите pmap2 при помощи паттерн матчинга с idp
 
-\func pmap2 {A B C : \Type} (f : A -> B -> C) {a a' : A} (p : a = a') {b b' : B} (q : b = b') : f a b = f a' b' => {?}
+\func pmap2 {A B C : \Type} (f : A -> B -> C) {a a' : A} (p : a = a') {b b' : B} (q : b = b') : f a b = f a' b' \elim p, q
+  | idp, idp => idp
 
 -- Optional task
 -- 15. У оператора J есть другая форма, которую мы будем называть Jalt
@@ -102,7 +267,8 @@
 
 \func Jalt {A : \Type} (B : \Pi (a a' : A) -> a = a' -> \Type)
            (b : \Pi (a : A) -> B a a idp)
-           {a a' : A} (p : a = a') : B a a' p => {?}
+           {a a' : A} (p : a = a') : B a a' p
+  => J (B a) (b a) p
 
 -- Выразите J через Jalt. Можно пользоваться только Jalt, idp и всем, что через них выражается
 -- Hint:
@@ -111,10 +277,11 @@
 --    то есть, что для любого p : \Sigma (x : A) (a = x) верно, что (x, idp) = p
 -- c. Используя эти две конструкции, легко определить J
 
-\func transport'' {A : \Type} (B : A -> \Type) {a a' : A} (p : a = a') (b : B a) : B a' => {?}
+\func transport'' {A : \Type} (B : A -> \Type) {a a' : A} (p : a = a') (b : B a) : B a' => Jalt (\lam _ a' _ => B a') (\lam _ => b) p
 
 \func sigma-contr {A : \Type} {a : A} (p : \Sigma (x : A) (a = x)) : (a, idp) = {\Sigma (x : A) (a = x)} p => {?}
 
 \func J' {A : \Type} {a : A} (B : \Pi (a' : A) -> a = a' -> \Type)
          (b : B a idp)
-         {a' : A} (p : a = a') : B a' p => {?}
+         {a' : A} (p : a = a') : B a' p \elim p
+  | idp => b
