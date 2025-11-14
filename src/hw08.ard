@@ -1,5 +1,14 @@
+\import Arith.Nat
 \import Data.Bool
 \import Data.List \hiding (headDef)
+\import Data.Or
+\import Function.Meta
+\import Logic (Empty, absurd)
+\import Logic.Meta
+\import Meta
+\import Paths
+\import Paths.Meta
+\import hw01 (fac)
 \import hw07
 \import lect08
 \import Order.LinearOrder
@@ -10,28 +19,150 @@
 --    * Все элементы filter p xs удовлетворяют предикату p
 --    * Любой подсписок xs с тем же свойством является подсписком filter p xs
 
+\func filter {A : \Type} (p : A -> Bool) (xs : List A) : List A \elim xs
+  | nil => nil
+  | x :: xs => if (p x) (x :: filter p xs) (filter p xs)
+
+\func filter-sublist {A : \Type} (xs : List A) (p : A -> Bool) : Sublist (filter p xs) xs \elim xs
+  | List.nil => EmptySL
+  | List.:: x xs' =>
+    \let ih => filter-sublist xs' p \in
+      cases (p x) \with {
+        | true => CurrSL idp ih
+        | false => LaterSL ih
+      }
+
+\data AllProof {A : \Type} (xs : List A) (p : A -> Bool) \elim xs
+  | nil => NilProof
+  | x :: xs => ConsProof (p x = true) (AllProof xs p)
+
+\func filter-pred {A : \Type} {xs : List A} {p : A -> Bool} : AllProof (filter p xs) p
+  | {A}, {nil} => NilProof
+  | {A}, {x :: xs}, {p} => cases (p x arg addPath) \with {
+    | false, p1 => filter-pred
+    | true, p1 => ConsProof p1 filter-pred
+  }
+
+\func sublist-filter {A : \Type} {xs ys : List A} {s : Sublist ys xs} {p : A -> Bool} {asp : AllProof ys p} : Sublist ys (filter p xs) \elim xs, ys, asp
+  | _, nil, NilProof => EmptySL
+  | nil, y :: ys, ConsProof p1 asp => s
+  | x :: xs, y :: ys, ConsProof p1 asp => cases s \with {
+    | CurrSL y=x s' => rewrite (inv y=x, p1) $ CurrSL idp (sublist-filter {_} {xs} {ys} {s'} {p} {asp})
+    | LaterSL s' => cases (p x arg addPath) \with {
+      | true, px=true => LaterSL (sublist-filter {_} {xs} {y :: ys} {s'} {p} {ConsProof p1 asp})
+      | false, px=false => sublist-filter {_} {xs} {y :: ys} {s'} {p} {ConsProof p1 asp}
+    }
+  }
+
 -- 2. Докажите, что Perm l1 l2 тогда и только тогда, когда Insertion.sort l1 = Insertion.sort l2
+\func helper1 {A : Dec} {l1 l2 : List A} (p : Perm l1 l2) : Insertion.sort l1 = Insertion.sort l2 \elim l1, l2, p
+  | nil, nil, perm-nil => idp
+  | x :: xs, y :: ys, perm-cons p1 p2 => rewrite p1 $ pmap (Insertion.sort.insert y) (helper1 p2)
+  | x :: (x1 :: xs), y :: (y1 :: ys), perm-swap p1 p2 p3 => rewrite (p1, p2, p3) $ Insertion.sort.insert-comm y1 y (Insertion.sort-sorted _)
+  | xs, ys, perm-trans p1 p2 => \let p3 => helper1 p1 \in
+                                \let p4 => helper1 p2 \in
+                                rewrite (p3, p4) idp
+
+\func Perm-swap {A : \Type} {xs ys : List A} (_ : Perm xs ys) : Perm ys xs
+  | {A}, {nil}, {nil}, perm-nil => perm-nil
+  | {A}, {x :: xs}, {y :: ys}, perm-cons p p1 => perm-cons (inv p) (Perm-swap p1)
+  | {A}, {x :: (x' :: xs)}, {y :: (y' :: ys)}, perm-swap p p1 p2 => perm-swap (inv p1) (inv p) (inv p2)
+  | perm-trans p1 p2 => perm-trans (Perm-swap p2) (Perm-swap p1)
+
+\func isNonEmpty {A : \Type} (xs : List A) : \Type \elim xs
+  | nil => Empty
+  | _ :: _ => \Sigma
+
+\func insert-nonEmpty {A : Dec} (a : A) (xs : List A) : isNonEmpty (Insertion.sort.insert a xs)
+  | a, nil => ()
+  | a, x :: xs => mcases ()
+
+\func helper2 {A : Dec} {xs ys : List A} (p : Insertion.sort xs = Insertion.sort ys) : Perm xs ys \elim xs, ys, p
+  | nil, nil, p => perm-nil
+  | nil, y :: ys, p => absurd $ transport isNonEmpty (inv p) (insert-nonEmpty y (Insertion.sort ys))
+  | x :: xs, nil, p => absurd $ transport isNonEmpty p (insert-nonEmpty x (Insertion.sort xs))
+  | x :: xs, y :: ys, p => \let p1 => rewrite p $ Insertion.sort-perm.insert-perm x (Insertion.sort xs) \in
+                           \let p2 => perm-cons (idp : x = x) (Insertion.sort-perm xs) \in
+                           \let p3 => Perm-swap $ Insertion.sort-perm.insert-perm y (Insertion.sort ys) \in
+                           \let p4 => Perm-swap $ perm-cons (idp : y = y) (Insertion.sort-perm ys) \in
+                           perm-trans (perm-trans (perm-trans p2 p1) p3) p4
+
+
+\func smth {A : Dec} {l1 l2 : List A} : Perm l1 l2 <-> (Insertion.sort l1 = Insertion.sort l2) =>
+  (helper1, helper2)
 
 -- 3. Докажите, что спецификация "результат является перестановкой входа и отсортирован" является полной для функции sort
 
+\func insert-sorted-head {A : Dec} (x : A) {xs : List A}
+                         (s : Sorted (x :: xs)) : Insertion.sort.insert x xs = x :: xs \elim xs
+  | nil => idp
+  | x' :: xs => cases (dec<_<= x' x, s) \with {
+    | inl x'<x, sorted-cons x<=x' s1 => contradiction
+    | inr x<=x', sorted-cons x<=x'2 s1 => idp
+  }
+
+\func sort-sorted-id {A : Dec} {xs : List A} (s : Sorted xs) 
+  : Insertion.sort xs = xs \elim xs, s
+  | nil, sorted-nil => idp
+  | x :: xs, sorted-cons x<=headDef s => rewrite (sort-sorted-id s) $ insert-sorted-head x (sorted-cons x<=headDef s)
+
+\func sorted-perm-unique {A : Dec} {xs ys : List A}
+                         (s1 : Sorted xs) (s2 : Sorted ys) (p : Perm xs ys)
+  : xs = ys => \let p1 => inv $ sort-sorted-id s1 \in
+               \let p2 => helper1 p \in
+               \let p3 => sort-sorted-id s2 \in
+               p1 *> p2 *> p3
+
 \func completeness {A : Dec} (sort : List A -> List A) (l : List A) (p : Perm l (sort l)) (s : Sorted (sort l))
-  : sort l = Insertion.sort l => {?}
+  : sort l = Insertion.sort l => \let p1 => Insertion.sort-sorted l \in
+                                 \let ps => Perm-swap p \in
+                                 \let ip => Insertion.sort-perm l \in
+                                 \let ps-ip => perm-trans ps ip \in
+                                 sorted-perm-unique s p1 ps-ip
 
 -- 4. Определите факториал через хвостовую рекурсию
 --    Докажите, что он равен обычному определению факториала
+
+\func facTail (n : Nat) : Nat => aux n 1
+  \where {
+    \func aux (n acc : Nat) : Nat \elim n
+      | 0 => acc
+      | Nat.suc n => aux n (acc Nat.* Nat.suc n)
+  }
+
+\func facTail=fac (n : Nat) : facTail n = fac n => aux n 1 *> NatSemiring.ide-left
+  \where {
+    \func aux (n acc : Nat) : facTail.aux n acc = acc Nat.* fac n \elim n
+      | 0 => idp
+      | Nat.suc n => aux n (acc Nat.* suc n) *> NatSemiring.*-assoc {acc} {suc n} {fac n} *> pmap (Nat.* acc) (NatSemiring.*-comm *> idp)
+  }
 
 -- 5. Определите функцию, которая проверяет правильность скобочной последовательности
 --    Докажите ее корректность
 
 \data Paren | Left | Right
 
-\func isBalanced (xs : List Paren) : Bool
-  => {?}
+\func isBalanced (xs : List Paren) : Bool => aux 0 xs
+  \where {
+    \func aux (depth : Nat) (xs : List Paren) : Bool \elim depth, xs
+      | 0, nil => true
+      | _, nil => false
+      | depth, Left :: xs => aux (suc depth) xs
+      | depth, Right :: xs => \case depth \with {
+        | 0 => false
+        | suc d => aux d xs
+      }
+  }
 
 \data Balanced (xs : List Paren) \with
   | nil => nil-balanced
   | :: Left xs => cons-balanced {ys : List Paren} (Balanced ys) (xs = ys ++ Right :: nil)
   | xs => append-balanced {ys zs : List Paren} (Balanced ys) (Balanced zs) (xs = ys ++ zs)
+
+\func balance-helper1 (xs : List Paren) (p : isBalanced xs = true) : Balanced xs \elim xs
+  | nil => nil-balanced
+  | Left :: xs => {?}
+  | Right :: xs => {?}
 
 \func isBalanced-correct (xs : List Paren) : (isBalanced xs = true) <-> Balanced xs
   => {?}
