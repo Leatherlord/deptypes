@@ -1,36 +1,97 @@
 \import Data.Maybe
-\import lect07 (Decide)
+\import Function.Meta
+\import Logic.Meta
+\import Meta
+\import Paths
+\import Paths.Meta
+\import hw07
+\import lect02 (absurd)
+\import lect06 (fmap)
+\import lect07 (Decide, no, yes)
 \import lect09
 
 
 -- 1. Докажите, что оператор >>= ассоциативен для Monad Term
 
+\func map-liftM-dist {B C : \Set} (l : B -> Term C) (s : Term B)
+  : termMap just s >>= liftM l = termMap just (s >>= l) \elim s
+  | unit => idp
+  | var b => idp
+  | app s1 s2 => pmap2 app (map-liftM-dist l s1) (map-liftM-dist l s2)
+  | lam f => pmap lam $ {?}
+
 \func Term->>=-assoc {A B C : \Set} (t : Term A) (k : A -> Term B) (l : B -> Term C)
-  : t >>= k >>= l = {Term C} t >>= (\lam a => k a >>= l) => {?}
+  : t >>= k >>= l = {Term C} t >>= (\lam a => k a >>= l) \elim t
+  | unit => idp
+  | var v => idp
+  | app t1 t2 => pmap2 app (Term->>=-assoc _ _ _) (Term->>=-assoc _ _ _)
+  | lam t => pmap lam $ Term->>=-assoc t (liftM k) (liftM l)
+             *> pmap (t >>=) (unfold liftM $ ext \case \elim __ \with {
+    | nothing => idp
+    | just a => map-liftM-dist l (k a)
+  })
 
 
 -- 2. Определите отношение многошаговой редукции на Term
 
-\func Red {V : \Set} (t s : Term V) : \Type => {?}
+\func Red {V : \Set} (t s : Term V) : \Type => ReflTransClosure Red1 t s
 
 
 -- 3. Стратегия редукции -- это функция, которая каждому терму сопоставляет либо некоторый терм,
 --    к которому он редуцируется за 1 шаг, либо доказательство, что таких термов нет
 --    Определите любую стратегию редукции
 
-\func strategy {V : \Set} (t : Term V) : Decide (\Sigma (s : Term V) (Red1 t s)) => {?}
+\func strategy {V : \Set} (t : Term V) : Decide (\Sigma (s : Term V) (Red1 t s)) \elim t
+  | unit => no (\lam _x => \case _x.2)
+  | var v => no (\lam _x => \case _x.2)
+  | app t1 t2 => cases (t1 arg addPath) \with {
+    | unit, p => cases (strategy t2) \with {
+      | yes a => yes (app t1 a.1, red-right (inv p) a.2)
+      | no n => no (\lam _x => cases (_x.1, _x.2) \with {
+        | x, beta f p1 p2 => \case p1
+        | app x x1, red-left x2 p1 => \case x2
+        | app x x1, red-right p1 x2 => n (x1, x2)
+      })
+    }
+    | var v, p => cases (strategy t2) \with {
+      | yes a => yes (app t1 a.1, red-right (inv p) a.2)
+      | no n => no (\lam _x => cases (_x.1, _x.2) \with {
+        | x, beta f p1 p2 => \case p1
+        | app x x1, red-left x2 p1 => \case x2
+        | app x x1, red-right p1 x2 => n (x1, x2)
+      })
+    }
+    | app x1 x2, p => cases (strategy t1 arg addPath) \with {
+      | yes a, pp => yes (app a.1 t2, red-left (rewrite (inv p) a.2) idp)
+      | no n, pp => cases (strategy t2) \with {
+        | yes a => yes (app t1 a.1, red-right (inv p) a.2)
+        | no n' => no (\lam _x => cases (_x.1, _x.2) \with {
+          | x, beta f p1 p2 => \case p1
+          | app x x1', red-left x2' p1 => n (x, rewrite p x2')
+          | app x x1, red-right p1 x2 => n' (x1, x2)
+        })
+      }
+    }
+    | lam x, p => yes (x >>= maybe t2 var, beta x idp idp)
+  }
+  | lam t => cases (strategy t) \with {
+    | yes a => yes (lam a.1, red-lam a.2)
+    | no n => no (\lam _x => cases (_x.1, _x.2) \with {
+      | lam x, red-lam x1 => n (x, x1)
+    })
+  }
 
 
 -- 4. Докажите, что подтермы достижимого терма достижимы
 
-\func appAccLeft {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 t
-  => {?}
+\func appAccLeft {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 t \elim a
+  | acc f => acc (\lam a' r => appAccLeft $ f (app a' s) (red-left r idp))
 
-\func appAccRight {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 s
-  => {?}
+\func appAccRight {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 s \elim a
+  | acc f => acc (\lam a' r => appAccRight $ f (app t a') (red-right idp r))
 
-\func subLamAcc {V : \Set} {t : Term (Maybe V)} (a : Acc Red1 (lam t)) : Acc Red1 t
-  => {?}
+\func subLamAcc {V : \Set} {t : Term (Maybe V)} (a : Acc Red1 (lam t)) : Acc Red1 t \elim a
+  | acc f => acc (\lam a' r => subLamAcc $ f (lam a') (red-lam r))
 
 
 -- 5. Докажите следующую обобщенную лемму о подстановке и выведите из нее обычную версию:
@@ -38,15 +99,81 @@
 
 \func substLem {U V : \Set} (ctx : U -> Type) (b : Term U) (B : Type) (h : hasType ctx b B)
                (ctx' : V -> Type) (a : U -> Term V) (h' : \Pi (u : U) -> hasType ctx' (a u) (ctx u))
-  : hasType ctx' (b >>= a) B => {?}
+  : hasType ctx' (b >>= a) B \elim b, B, h
+  | unit, Unit, unit-type => unit-type
+  | var v, B, var-type p => unfold (>>=) $ rewrite (inv p) $ h' v
+  | app b1 b2, B, app-type T h1 h2 => app-type T (substLem _ b1 _ h1 _ _ h') (substLem _ b2 _ h2 _ _ h')
+  | lam b, Arr B B1, lam-type h => lam-type $ substLem (maybe B ctx) b B1 h (maybe B ctx') (liftM a) (helper ctx B ctx' a h')
+  \where {
+    \func helper {U V : \Set } (ctx : U -> Type) (B : Type)
+                 (ctx' : V -> Type) (a : U -> Term V) (h' : \Pi (u : U) -> hasType ctx' (a u) (ctx u))
+                 (u : Maybe U) : hasType (maybe B ctx') (liftM a u) (maybe B ctx u) \elim u
+      | nothing => var-type idp
+      | just a' => unfold liftM $ \let ih => h' a' \in
+                                    helper-helper ih
 
-\func substLem1 => {?}
+    \func helper-helper {V : \Set } {ctx' : V -> Type} {a : Term V} {A : Type} {B : Type}
+                        (ih : hasType ctx' a A) : hasType (maybe B ctx') (termMap just a) A \elim a, A, ih
+      | unit, Unit, unit-type => unit-type
+      | var v, A, var-type p => var-type p
+      | app a1 a2, A, app-type T ih1 ih2 => app-type T (helper-helper ih1) (helper-helper ih2)
+      | lam a \as a', Arr A1 A2, lam-type ih \as ih-old => cases (termMap just a' arg addPath) \with {
+        | lam x, p => rewriteI p $ lam-type $ fucking-shit ih (\lam v => cases (v arg addPath) \with {
+          | nothing, pv => idp
+          | just u, pv => idp
+        })
+      }
+
+    \func fucking-shit {V W : \Set } {ctx' : V -> Type} {ctx'' : W -> Type} {f : V -> W}
+                       {a : Term V} {A : Type}
+                       (ih : hasType ctx' a A)
+                       (h : \Pi (v : V) -> ctx'' (f v) = ctx' v)
+      : hasType ctx'' (termMap f a) A \elim a, A, ih
+      | unit, Unit, unit-type => unit-type
+      | var v, A, var-type p => var-type (h v *> p)
+      | app a1 a2, A, app-type T ih1 ih2 => app-type T (fucking-shit ih1 h) (fucking-shit ih2 h)
+      | lam a \as a', Arr A' A'', lam-type ih => cases (termMap f a' arg addPath) \with {
+        | lam x, q => rewriteI q $ lam-type $ fucking-shit ih (\lam v => cases (v arg addPath) \with {
+          | nothing, pv => idp
+          | just u, pv => h u
+        })
+      }
+  }
+
+--    если Г, x : A |- b : B и Г |- a : A, то Г |- b[a/x] : B
+\func substLem1 {U : \Set} {ctx : U -> Type} {A B : Type}
+                {b : Term (Maybe U)} (xT : hasType (maybe A ctx) b B)
+                {a : Term U} (aT : hasType ctx a A)
+                : hasType ctx (b >>= maybe a var) B
+                 => substLem {Maybe U} (maybe A ctx) b B xT ctx (maybe a var) (\lam u => cases u \with {
+                   | nothing => aT
+                   | just u => var-type idp
+                 })
 
 
 -- 6. Докажите, что если Г |- a : A и Red a a', то Г |- a' : A
-
 \func redLem {V : \Set} {ctx : V -> Type} {a a' : Term V} (r : Red a a') {A : Type} (h : hasType ctx a A)
-  : hasType ctx a' A => {?}
+  : hasType ctx a' A \elim r
+  | BaseC r => red1Lem r h
+  | ReflC p => rewrite (inv p) h
+  | TransC z r r1 => \let ih1 => redLem r h \in redLem r1 ih1
+  \where {
+    \func red1Lem {V : \Set} {ctx : V -> Type} {a a' : Term V} (r : Red1 a a') {A : Type} (h : hasType ctx a A)
+      : hasType ctx a' A \elim a, A, h
+      | unit, Unit, unit-type => \case r
+      | var v, A, var-type p => \case r
+      | app a1 a2, A, app-type T h1 h2 => cases (a', r) \with {
+        | a', beta f p1 p2 => rewrite p2 $ substLem1 (cases (rewrite p1 h1) \with {
+          | lam-type x => x
+        }) h2
+        | app a'1 a'2, red-left r1 p => rewrite (inv p) $ app-type T (red1Lem r1 h1) h2
+        | app a'1 a'2, red-right p r1 => rewrite (inv p) $ app-type T h1 (red1Lem r1 h2)
+      }
+      | lam a, Arr A1 A2, lam-type h => cases (a', r) \with {
+        | lam a'1, red-lam r1 \as r => lam-type $ red1Lem r1 h
+      }
+  }
+
 
 
 -- Optional
