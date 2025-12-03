@@ -2,8 +2,15 @@
 \import Data.List
 \import Data.Or
 \import Function \hiding (isInj)
+\import Function.Meta
 \import Logic
-\import lect07 (Decide)
+\import Logic.Meta
+\import Meta
+\import Paths (pmap)
+\import Paths.Meta
+\import Prelude (=, Nat, idp, path, suc, zero)
+\import lect05 (sigmaExt')
+\import lect07 (Decide, no, yes)
 \import lect10
 
 
@@ -11,23 +18,31 @@
 --    Докажите, что если f и g инъективны, то g o f также инъективна
 --    Докажите, что если g o f инъективна, то f также инъективна
 
-\func o-inj {A B C : \Type} (f : A -> B) (g : B -> C) (p : isInj f) (q : isInj g) : isInj (g o f) => {?}
+\func o-inj {A B C : \Type} (f : A -> B) (g : B -> C) (p : isInj f) (q : isInj g) : isInj (g o f)
+  => \lam {_} {_} op => \let ga => q op \in p ga
 
-\func o-inj' {A B C : \Type} (f : A -> B) (g : B -> C) (p : isInj (g o f)) : isInj f => {?}
+\func o-inj' {A B C : \Type} (f : A -> B) (g : B -> C) (p : isInj (g o f)) : isInj f
+  => \lam {_} {_} fp => \let pf => pmap g fp \in p pf
 
 
 -- 2. Определите предикат "делится на 3 или на 5" так, чтобы он возвращал утверждения
 --    Докажите, что MultipleOf3Or5 вкладывается в Nat
 
-\func isMultipleOf3Or5 (n : Nat) : \Type => {?}
+\func isMultipleOf3Or5 (n : Nat) : \Type => (mod3 n = 0) `Or` (\Sigma (Not (mod3 n = 0)) (mod5 n = 0))
 
-\func isMultipleOf3Or5-isProp (n : Nat) : isProp (isMultipleOf3Or5 n) => {?}
+\func isMultipleOf3Or5-isProp (n : Nat) : isProp (isMultipleOf3Or5 n) => \lam x y => cases (x, y) \with {
+  | inl a, inl a1 => pmap inl ext
+  | inl a, inr b => absurd (b.1 a)
+  | inr b, inl a => absurd (b.1 a)
+  | inr b, inr b1 => pmap inr ext
+}
 
 \func MultipleOf3Or5 => \Sigma (n : Nat) (isMultipleOf3Or5 n)
 
 \func Mul-inc (m : MultipleOf3Or5) => m.1
 
-\func Mul-inc-isInj : isInj Mul-inc => {?}
+\func Mul-inc-isInj : isInj Mul-inc => \lam {(xn, xp)} {(yn, yp)} p => unfold Mul-inc at p $ sigmaExt' p $
+                                       \let xp => rewrite p xp \in $ isMultipleOf3Or5-isProp yn xp yp
 
 
 -- 3. Мы будем говорить, что тип A тривиален, если существует такой элемент в A, что любой другой элемент в A равен ему
@@ -37,12 +52,18 @@
 
 \func \infix 1 <-> (A B : \Type) => \Sigma (A -> B) (B -> A)
 
-\func isTriv-lem (A : \Type) : isTriv A <-> (\Sigma (isProp A) A) => {?}
+\func isTriv-lem (A : \Type) : isTriv A <-> (\Sigma (isProp A) A) =>
+  (\lam i => ( \lam x y =>
+      \let xe => i.2 x \in
+      \let ye => i.2 y \in rewriteI xe ye, i.1),
+   \lam p => (p.2, \lam a' => p.1 p.2 a'))
 
 
 -- 4. Докажите, что Or не является утверждением в общем случае
 
-\func Or-isProp (p : \Pi {A B : \Type} (pA : isProp A) (pB : isProp B) -> isProp (Or A B)) : Empty => {?}
+\func Or-isProp (p : \Pi {A B : \Type} (pA : isProp A) (pB : isProp B) -> isProp (Or A B)) : Empty =>
+  \let prp =>  p Unit-isProp Unit-isProp \in
+  \let eq => prp (inl ()) (inr ()) \in \case eq
 
 
 -- 5. Докажите, что LessOrEq является предикатом
@@ -51,12 +72,17 @@
   | 0, m => z<=n
   | suc n, suc m => s<=s (LessOrEq n m)
 
-\func LessOrEq-isProp {n m : Nat} : isProp (LessOrEq n m) => {?}
+\func LessOrEq-isProp {n m : Nat} : isProp (LessOrEq n m) => \lam x y => helper x y
+  \where {
+    \func helper {n m : Nat} (x y : LessOrEq n m) : x = y
+      | {0}, z<=n, z<=n => idp
+      | {suc n}, {suc m}, s<=s x, s<=s y => pmap s<=s $ helper x y
+  }
 
 
 -- 6. Докажте, что ReflClosure LessOrEq не является предикатом, а ReflClosure (\lam x y => So (x < y)) является
 
-\func \infix 4 < (n m : Nat) : Bool
+\func \infix 4 < (_ _ : Nat) : Bool
   | _, 0 => false
   | 0, suc _ => true
   | suc n, suc m => n < m
@@ -65,36 +91,158 @@
   | refl (x = y)
   | inc (R x y)
 
-\func ReflClosure_<-isProp (n m : Nat) : isProp (ReflClosure (\lam x y => So (x < y)) n m) => {?}
+\func ReflClosure_<-isProp (n m : Nat) : isProp (ReflClosure (\lam x y => So (x < y)) n m) => \lam x y => helper x y
+  \where {
+    \func helper {n m : Nat} (x y : ReflClosure (\lam x y => So (x < y)) n m) : x = y
+      | {0}, {0}, refl _, refl _ => pmap refl $ ext
+      | {0}, {0}, refl _, inc r => absurd r
+      | {0}, {0}, inc r, refl _ => absurd r
+      | {0}, {0}, inc r, inc _ => absurd r
+      | {0}, {suc _}, refl _, refl _ => pmap refl $ ext
+      | {0}, {suc _}, refl _, inc _ => contradiction
+      | {0}, {suc _}, inc _, refl _ => contradiction
+      | {0}, {suc _}, inc _, inc _ => pmap inc $ ext
+      | {suc _}, {0}, refl _, refl _ => pmap refl $ ext
+      | {suc _}, {0}, refl _, inc r => absurd r
+      | {suc _}, {0}, inc r, _ => absurd r
+      | {suc _}, {suc _}, refl _, refl _ => pmap refl $ ext
+      | {suc _}, {suc _}, inc _, inc _ => pmap inc $ ext
+      | {suc n}, {suc m}, inc r, refl y => cases (n < m arg addPath) \with {
+        | false, p => \let r' => rewrite p r \in absurd r'
+        | true, p => \let y' => eq-not-less y \in contradiction
+      }
+      | {suc n}, {suc m}, refl x, inc r => cases (n < m arg addPath) \with {
+        | false, p => \let r' => rewrite p r \in absurd r'
+        | true, p => \let x' => eq-not-less x \in contradiction
+      }
 
-\func ReflClosure_<=-isNotProp (p : \Pi (n m : Nat) -> isProp (ReflClosure LessOrEq n m)) : Empty => {?}
+      \func eq-not-less {x y : Nat} (_ : x = y) : x < y = false
+        | {0}, {0}, p => idp
+        | {suc x}, {suc y}, p => \let p' => unsuc p \in eq-not-less p'
+
+      \func unsuc {x y : Nat} (_ : suc x = suc y) : x = y
+        | {0}, {0}, p => idp
+        | {suc x}, {suc y}, p => path (\lam i => cases (p i) \with {
+          | 0 => zero
+          | suc x => x
+        })
+  }
+
+\func ReflClosure_<=-isNotProp (p : \Pi (n m : Nat) -> isProp (ReflClosure LessOrEq n m)) : Empty =>
+  \let prop => p 0 0 \in
+  \let eq => prop (inc z<=n) (refl idp) \in contradiction
 
 
 -- 7. Докажите, что если тип A вкладывается в тип B и B является утверждением, то и A является утверждением
 
-\func sub-isProp {A B : \Type} (f : A -> B) (p : isInj f) (q : isProp B) : isProp A => {?}
+\func sub-isProp {A B : \Type} (f : A -> B) (p : isInj f) (q : isProp B) : isProp A => \lam x y => p $ q (f x) (f y)
 
 
 -- 8. Докажите, что тип с разрешимым равенством является множеством
 
-\func Dec-isSet {A : \Type} (dec : \Pi (x y : A) -> Decide (x = y)) : isSet A => {?}
+\func Dec-isSet {A : \Type} (dec : \Pi (x y : A) -> Decide (x = y)) : isSet A =>
+  setLem (\lam x y => decToType (dec x y))
+         (\lam x y => decToType-isProp (dec x y))
+         (\lam a => decToType-refl (dec a a))
+         (\lam {x} {y} => decToType-decode (dec x y))
+  \where {
+    \func decToType {x y : A} (_ : Decide (x = y)) : \Type
+      | yes _ => \Sigma
+      | no _ => Empty
+    
+    \func decToType-isProp {x y : A} (d : Decide (x = y)) : isProp (decToType d)
+      | yes _ => Unit-isProp
+      | no _ => Empty-isProp
+    
+    \func decToType-refl {a : A} (d : Decide (a = a)) : decToType d
+      | yes _ => ()
+      | no n => absurd (n idp)
+    
+    \func decToType-decode {x y : A} (d : Decide (x = y)) (_ : decToType d) : x = y
+      | yes p, _ => p
+      | no n, e => absurd e
+  }
 
 
 -- 9. Если A и B являются множествами, то A `Or` B тоже является множеством
 
-\func or-isSet {A B : \Type} (p : isSet A) (q : isSet B) : isSet (Or A B) => {?}
+\func or-isSet {A B : \Type} (p : isSet A) (q : isSet B) : isSet (Or A B) =>
+  setLem (\lam x y => OrToType x y)
+         (\lam x y => OrToType-isProp x y)
+         (\lam a => OrToType-refl a)
+         (\lam {x} {y} => OrToType-decode x y)
+  \where {
+    \func OrToType (_ _ : Or A B) : \Type
+      | inl x, inl y => x = y
+      | inl x, inr y => Empty
+      | inr x, inl y => Empty
+      | inr x, inr y => x = y
+
+    \func OrToType-isProp(x y : Or A B) : isProp (OrToType x y)
+      | inl a, inl a1 => p a a1
+      | inl a, inr b => Empty-isProp
+      | inr b, inl a => Empty-isProp
+      | inr b, inr b1 => q b b1
+
+    \func OrToType-refl (a : Or A B) : OrToType a a
+      | inl a => idp
+      | inr b => idp
+
+    \func OrToType-decode (x y : Or A B) (_ : OrToType x y) : x = y
+      | inl a, inl a1, o => pmap inl $ o
+      | inl a, inr b, o => absurd o
+      | inr b, inl a, o => absurd o
+      | inr b, inr b1, o => pmap inr $ o
+  }
 
 
 -- 10. Если B x является множеством, то \Pi (x : A) -> B x тоже является множеством
 
-\func pi-isSet {A : \Type} (B : A -> \Type) (p : \Pi (x : A) -> isSet (B x)) : isSet (\Pi (x : A) -> B x) => {?}
+\func pi-isSet {A : \Type} (B : A -> \Type) (p : \Pi (x : A) -> isSet (B x)) : isSet (\Pi (x : A) -> B x) =>
+  setLem (\lam x y => PiToType x y)
+         (\lam x y => PiToType-isProp x y)
+         (\lam a => PiToType-refl a)
+         (\lam {x} {y} => PiToType-decode x y)
+  \where {
+    \func PiToType (x y : \Pi (x : A) -> B x) : \Type => \Pi (z : A) -> x z = y z
+
+    \func PiToType-isProp (x y : \Pi (x : A) -> B x) : isProp (PiToType x y) => \lam p' q' => ext $
+    (\lam z => ((p z) (x z) (y z)) (p' z) (q' z))
+
+    \func PiToType-refl (a : \Pi (x : A) -> B x) : PiToType a a => \lam _ => idp
+
+    \func PiToType-decode (x y : \Pi (x : A) -> B x) (o : PiToType x y) : x = y => ext o
+  }
 
 
 -- 11. Докажите, что если A является множеством, то List A также им является
 
-\func List-isSet {A : \Type} (pA : isSet A) : isSet (List A) => {?}
+\func List-isSet {A : \Type} (pA : isSet A) : isSet (List A) =>
+  setLem (\lam x y => ListToType x y)
+         (\lam x y => ListToType-isProp x y)
+         (\lam a => ListToType-refl a)
+         (\lam {x} {y} => ListToType-decode x y)
+  \where {
+    \func ListToType (_ _ : List A) : \Type
+      | nil, nil => \Sigma
+      | nil, _ :: _ => Empty
+      | _ :: _, nil => Empty
+      | x :: xs, y :: ys => \Sigma (x = y) (ListToType xs ys)
 
+    \func ListToType-isProp (x y : List A) : isProp (ListToType x y)
+      | nil, nil => Unit-isProp
+      | nil, _ :: _ => Empty-isProp
+      | _ :: _, nil => Empty-isProp
+      | x :: xs, y :: ys => Sigma-isProp (pA x y) $ ListToType-isProp xs ys
 
+    \func ListToType-refl (a : List A) : ListToType a a
+      | nil => ()
+      | a :: as => (idp, ListToType-refl as)
+
+    \func ListToType-decode (x y : List A) (_ : ListToType x y) : x = y
+      | nil, nil, o => idp
+      | x :: xs, y :: ys, o => rewrite o.1 $ pmap (:: y) $ ListToType-decode xs ys o.2
+  }
 -- Optional:
 -- 12. Докажите, что n-типы замкнуты относительно образования \Pi-типов в общем случае
 --     Hint: Доказательство по индукции
@@ -102,4 +250,6 @@
 --     то f = g эквивалентно \Pi (x : A) -> f x = g x
 
 \func levelPi {A : \Type} (B : A -> \Type) (n : Nat) (p : \Pi (x : A) -> B x `hasLevel` n)
-  : (\Pi (x : A) -> B x) `hasLevel` n => {?}
+  : (\Pi (x : A) -> B x) `hasLevel` n \elim n
+  | 0 => \lam x y => \lam x1 y1 => {?}
+  | suc n => {?}
