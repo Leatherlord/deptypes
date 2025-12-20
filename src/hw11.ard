@@ -1,33 +1,82 @@
 \import Data.Bool
+\import Equiv
+\import Equiv.Univalence
 \import Function
-\import Logic (<->)
+\import Function.Meta
+\import HLevel ()
+\import Logic (<->, prop-isProp)
+\import Meta
+\import Paths (*>, inv, pmap)
+\import Paths.Meta
 \import lect11
 
 
 -- 1. Докажите, что если A : \Prop, то Trunc A эквивалентен A
 
-\func trunc-prop {A : \Prop} : Trunc A <-> A => {?}
+\func trunc-prop {A : \Prop} : Trunc A <-> A => (Trunc-to-type, trunc)
+  \where {
+    \func Trunc-to-type {A : \Prop} (_ : Trunc A) : A
+      | trunc a => a
+  }
 
 
 -- 2. Докажите следующий закон де Моргана
 
-\func deMorgan (A B C : \Prop) : (\Sigma A (B `Or` C)) <-> ((\Sigma A B) `Or` (\Sigma A C)) => {?}
+\func deMorgan (A B C : \Prop) : (\Sigma A (B `Or` C)) <-> ((\Sigma A B) `Or` (\Sigma A C)) => (L-to-R, R-to-L)
+  \where {
+    \func L-to-R {A B C : \Prop} (_ : \Sigma A (B `Or` C)) : (\Sigma A B) `Or` (\Sigma A C)
+      | (a,o) => cases o \with {
+        | inl a1 => inl (a, a1)
+        | inr b => inr (a, b)
+      }
+
+
+    \func R-to-L {A B C : \Prop} (_ : (\Sigma A B) `Or` (\Sigma A C)) : \Sigma A (B `Or` C)
+      | inl (a, b) => (a, inl b)
+      | inr (a, c) => (a, inr c)
+  }
 
 
 -- 3. Определите элиминатор для Or через Or-rec, не используя паттерн матчинг на Or
 
 \func Or-elim {A B : \Prop} (C : Or A B -> \Prop)
               (f : \Pi (x : A) -> C (inl x)) (g : \Pi (y : B) -> C (inr y))
-              (p : A `Or` B) : C p => {?}
-
+              (p : A `Or` B) : C p => Or-rec (\lam a => transport C (prop-isProp (inl a) p) $ f a) (\lam b => transport C (prop-isProp (inr b) p) $ g b) p
 
 -- 4. Докажите, что тип утверждений является множеством
 
-\func prop-isSet : isSet \Prop => {?}
+\func prop-isSet : isSet \Prop => \lam _ _ => prop-isProp
 
 
 -- 5. Докажите, что функции Prop1-to-Prop2 и Prop2-to-Prop1 взаимно обратны и, как следствие, что Prop1 = Prop2
 
+\lemma prop121 {P : \Prop} : Prop2-to-Prop1 (Prop1-to-Prop2 P) = P
+  => unfold Prop1-to-Prop2 $ unfold Prop2-to-Prop1 $
+                             ext (L-to-R, R-to-L)
+  \where {
+    \func L-to-R (_ : Prop2-to-Prop1' P prop-isProp) : P
+      | inc a => a
+
+    \func R-to-L (p : P) : Prop2-to-Prop1' P prop-isProp => inc p
+  }
+
+\func prop212 {P : Prop2} : Prop1-to-Prop2 (Prop2-to-Prop1 P) = P
+  => unfold Prop1-to-Prop2 $ unfold Prop2-to-Prop1 $ ext (ext (\new Equiv {
+    | f => f'
+    | ret => inc
+    | ret_f => ret_f'
+    | sec => inc
+    | f_sec => f_sec'
+  }), HLevel.isProp.levelProp P.1 _ P.2)
+  \where {
+    \sfunc f' (_ : Prop2-to-Prop1' P.1 P.2) : P.1
+      | inc a => a
+
+    \func ret_f' (x : Prop2-to-Prop1' P.1 P.2) : inc (f' x) = x
+      | inc a => pmap inc $ P.2 (f' (inc a)) a
+
+    \func f_sec' (x : P.1) : f' (inc x) = x => P.2 (f' (inc x)) x
+  }
 
 -- Можно сделать только одно из упражнений 6a, 6b на выбор
 
@@ -55,6 +104,28 @@
 
 -- 7a. Докажите, что (Bool = Bool) = Bool
 
-\func BoolAut : (Bool = Bool) = Bool => {?}
+\func BoolAut : (Bool = Bool) = Bool => univalence.ret (\new QEquiv {
+  | f p => f' $ =-to-QEquiv p
+  | ret => ret'
+  | ret_f => {?}
+  | f_sec => f_sec'
+})
+  \where {
+    \func f' (_ : Equiv {Bool} {Bool}) : Bool
+      | (f, ret, ret_f, sec, f_sec) => f true
+
+    \func ret' (_ : Bool) : Bool = Bool
+      | false => univalence.ret (\new QEquiv not not not-not not-not)
+      | true => univalence.ret (\new QEquiv id id (\lam _ => idp) (\lam _ => idp))
+
+    \func ret_f' (x : Bool = {\Set} Bool) : ret' (=-to-QEquiv x true) = x => cases (=-to-QEquiv x true arg addPath) \with {
+      | false, p => {?}
+      | true, p => {?}
+    }
+
+    \func f_sec' (y : Bool) : =-to-QEquiv (ret' y) true = y
+      | true => idp
+      | false => idp
+  }
 
 -- 7b. Докажите, что (n+m)-элементное множество равно размеченному объединению n- и m-элементных множеств
